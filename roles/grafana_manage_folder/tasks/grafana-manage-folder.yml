@@ -1,0 +1,9 @@
+- name: Create/Update a Folder in Grafana
+  community.grafana.grafana_folder:
+    title: "{{ grafana_folder }}"
+    uid: "{{ grafana_folder }}-folder"
+    url: "https://{{ grafana_hostname }}"
+    url_username: "{{ grafana_admin_user }}"
+    url_password: "{{ grafana_admin_password }}"
+    state: "{{ state }}"
+    validate_certs: "false"

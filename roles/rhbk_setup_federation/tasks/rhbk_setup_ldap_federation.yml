@@ -1,0 +1,97 @@
+- name: Login to RHBK and get admin token
+  ansible.builtin.uri:
+    url: "https://{{ rhbk_host }}/realms/master/protocol/openid-connect/token"
+    method: POST
+    headers:
+      Content-Type: "application/x-www-form-urlencoded"
+    body_format: form-urlencoded
+    body:
+      grant_type: password
+      client_id: admin-cli
+      username: "{{ rhbk_admin_user }}"
+      password: "{{ rhbk_admin_password }}"
+    validate_certs: "{{ rhbk_verify_ssl }}"
+    return_content: true
+  register: rhbk_auth
+
+- name: Check if realm exists
+  ansible.builtin.uri:
+    url: "https://{{ rhbk_host }}/admin/realms/{{ rhbk_realm }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ rhbk_auth.json.access_token }}"
+    return_content: false
+    status_code: [200, 404]
+    validate_certs: "{{ rhbk_verify_ssl }}"
+  register: realm_check
+
+- name: Set fact if realm exists
+  ansible.builtin.set_fact:
+    realm_exists: "{{ realm_check.status == 200 }}"
+
+- name: Get realm details (only if it exists)
+  ansible.builtin.uri:
+    url: "https://{{ rhbk_host }}/admin/realms/{{ rhbk_realm }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ rhbk_auth.json.access_token }}"
+    return_content: true
+    validate_certs: "{{ rhbk_verify_ssl }}"
+  register: realm_info
+  when: realm_exists
+
+- name: Get existing federation providers in realm
+  ansible.builtin.uri:
+    url: "https://{{ rhbk_host }}/admin/realms/{{ rhbk_realm }}/components?parent={{ realm_info.json.id }}&type=org.keycloak.storage.UserStorageProvider"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ rhbk_auth.json.access_token }}"
+    return_content: true
+    validate_certs: "{{ rhbk_verify_ssl }}"
+  register: federation_components
+  when: realm_exists
+
+- name: Check if federation provider exists
+  set_fact:
+    federation_exists: >-
+      {{
+        federation_components.json
+        | selectattr('name', 'equalto', rhbk_federation_name)
+        | list
+        | length > 0
+      }}
+  when: realm_exists
+
+- name: Create LDAP user federation (only if realm exists and federation doesn't)
+  ansible.builtin.uri:
+    url: "https://{{ rhbk_host }}/admin/realms/{{ rhbk_realm }}/components"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ rhbk_auth.json.access_token }}"
+      Content-Type: application/json
+    body_format: json
+    body:
+      name: "{{ rhbk_federation_name }}"
+      providerId: "ldap"
+      providerType: "org.keycloak.storage.UserStorageProvider"
+      parentId: "{{ realm_info.json.id }}"
+      config: "{{ ldap_config }}"
+    status_code: 201
+    validate_certs: "{{ rhbk_verify_ssl }}"
+  when: realm_exists and not federation_exists
+
+- name: Extract LDAP federation component
+  ansible.builtin.set_fact:
+    federation_component_obj: >-
+      {{
+        federation_components.json
+        | selectattr('name', 'equalto', rhbk_federation_name)
+        | list
+        | first | default({})
+      }}
+  when: realm_exists
+
+- name: Set the LDAP federation component ID
+  ansible.builtin.set_fact:
+    component_id: "{{ federation_component_obj.id | default('') }}"
+  when: realm_exists

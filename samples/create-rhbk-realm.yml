@@ -1,0 +1,18 @@
+---
+- name: Create RHBK realm
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - fbi.application
+  vars_files:
+    - vault.yml
+  vars:
+    rhbk_host: sso.server.lab:8443   # if you port is 443 you don't need to add port to this var
+    #rhbk_realm: lab_test
+
+    rhbk_verify_ssl: false
+
+  roles:
+    - role: fbi.application_infra.rhbk_realm
+                                  
+

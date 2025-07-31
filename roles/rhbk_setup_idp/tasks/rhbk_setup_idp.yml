@@ -1,0 +1,46 @@
+- name: Query OIDC discovery document
+  ansible.builtin.uri:
+    url: "{{ entra_discovery_url }}/.well-known/openid-configuration"
+    method: GET
+    return_content: true
+    validate_certs: "{{ rhbk_verify_ssl }}"
+  register: entra_discovery
+
+- name: Set Entra OIDC endpoints from discovery document
+  set_fact:
+    entra_auth_url: "{{ entra_discovery.json.authorization_endpoint }}"
+    entra_token_url: "{{ entra_discovery.json.token_endpoint }}"
+    entra_logout_url: "{{ entra_discovery.json.end_session_endpoint | default('') }}"
+    entra_userinfo_url: "{{ entra_discovery.json.userinfo_endpoint }}"
+
+- name: Create OIDC Identity Provider (Microsoft Entra ID)
+  ansible.builtin.uri:
+    url: "https://{{ rhbk_host }}/admin/realms/{{ rhbk_realm }}/identity-provider/instances"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ rhbk_auth.json.access_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      alias: "{{ entra_idp_alias }}"
+      providerId: "oidc"
+      enabled: true
+      trustEmail: true
+      storeToken: false
+      addReadTokenRoleOnCreate: false
+      authenticateByDefault: false
+      linkOnly: false
+      config:
+        clientId: "{{ entra_client_id }}"
+        clientSecret: "{{ entra_client_secret }}"
+        authorizationUrl: "{{ entra_auth_url }}"
+        tokenUrl: "{{ entra_token_url }}"
+        logoutUrl: "{{ entra_logout_url }}"
+        userInfoUrl: "{{ entra_userinfo_url }}"
+        issuer: "{{ entra_discovery_url }}"
+        defaultScope: "openid email profile"
+        syncMode: "FORCE"
+    status_code: 201
+    validate_certs: "{{ rhbk_verify_ssl }}"
+  when: realm_exists
+

@@ -1,0 +1,78 @@
+- name: Login to RHBK and get admin token
+  ansible.builtin.uri:
+    url: "https://{{ rhbk_host }}/realms/master/protocol/openid-connect/token"
+    method: POST
+    headers:
+      Content-Type: "application/x-www-form-urlencoded"
+    body_format: form-urlencoded
+    body:
+      grant_type: password
+      client_id: admin-cli
+      username: "{{ rhbk_admin_user }}"
+      password: "{{ rhbk_admin_password }}"
+    validate_certs: "{{ rhbk_verify_ssl }}"
+    return_content: true
+  register: rhbk_auth
+
+- name: Lookup user by username
+  ansible.builtin.uri:
+    url: "https://{{ rhbk_host }}/admin/realms/{{ rhbk_realm }}/users?username={{ rhbk_user_username }}"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ rhbk_auth.json.access_token }}"
+    return_content: true
+    validate_certs: "{{ rhbk_verify_ssl }}"
+  register: keycloak_users
+
+- name: Get user ID
+  ansible.builtin.set_fact:
+    user_id: "{{ keycloak_users.json[0].id }}"
+  when: keycloak_users.json | length > 0
+
+- name: Get group ID
+  ansible.builtin.uri:
+    url: "https://{{ rhbk_host }}/admin/realms/{{ rhbk_realm }}/groups"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ rhbk_auth.json.access_token }}"
+    return_content: true
+    validate_certs: "{{ rhbk_verify_ssl }}"
+  register: all_groups
+
+- name: Find group matching name (case-insensitive)
+  set_fact:
+    matching_groups: >-
+      {{
+        all_groups.json
+        | selectattr('name', 'defined')
+        | selectattr('name', 'match', '^' ~ rhbk_group_name ~ '$', ignorecase=True)
+        | list
+      }}
+
+- name: Fail if group not found
+  fail:
+    msg: "Group '{{ rhbk_group_name }}' not found. Available groups: {{ all_groups.json | map(attribute='name') | list }}"
+  when: matching_groups | length == 0
+
+- name: Set group object and group_id
+  set_fact:
+    group_obj: "{{ matching_groups[0] }}"
+    group_id: "{{ matching_groups[0].id }}"
+
+- name: Debug user_id and group_id
+  debug:
+    msg: "Removing user_id={{ user_id | default('UNDEFINED') }} from group_id={{ group_id | default('UNDEFINED') }}"
+
+- name: Remove user from group
+  ansible.builtin.uri:
+    url: "https://{{ rhbk_host }}/admin/realms/{{ rhbk_realm }}/users/{{ user_id }}/groups/{{ group_id }}"
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ rhbk_auth.json.access_token }}"
+    status_code: [204, 404]
+    validate_certs: "{{ rhbk_verify_ssl }}"
+  when:
+    - user_id is defined
+    - group_id is defined
+
+

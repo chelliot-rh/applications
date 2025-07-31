@@ -1,0 +1,11 @@
+- name: Create or update Keycloak realm 
+  community.general.keycloak_client:
+    auth_client_id: admin-cli
+    auth_keycloak_url: "https://{{ rhbk_hostname }}"
+    auth_realm: master
+    auth_username: "{{ rhbk_admin_user }}"
+    auth_password: "{{ rhbk_admin_password }}"
+    realm: "{{ rhbk_realm }}"
+    state: "{{ state }}"
+    validate_certs: "{{ rhbk_verify_ssl }}"
+    client_id: "{{ rhbk_client }}"

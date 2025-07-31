@@ -1,0 +1,5 @@
+- name: Create grafana folder
+  ansible.builtin.import_tasks: grafana-manage-datasource.yml
+  when: state == "present"
+
+

@@ -1,0 +1,4 @@
+- name: Setup upload dashboards
+  ansible.builtin.import_tasks: grafana-upload-dashboards.yml
+  when: state == "present"
+

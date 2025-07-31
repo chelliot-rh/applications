@@ -1,0 +1,79 @@
+- name: Fetch Prometheus Route information
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    name: prometheus-k8s
+    namespace: openshift-monitoring
+  register: prometheus_route_info
+
+- name: Extract Prometheus hostname
+  ansible.builtin.set_fact:
+    prometheus_source_hostname: "{{ prometheus_route_info.resources[0].spec.host }}"
+  when:
+    - prometheus_route_info.resources is defined
+    - prometheus_route_info.resources | length > 0
+    - prometheus_route_info.resources[0].spec is defined
+    - prometheus_route_info.resources[0].spec.host is defined
+
+- name: Display Prometheus hostname
+  ansible.builtin.debug:
+    msg: "OpenShift Prometheus Hostname: {{ prometheus_source_hostname }}"
+  when: prometheus_source_hostname is defined
+
+- name: Create ServiceAccount token secret
+  kubernetes.core.k8s:
+    namespace: openshift-monitoring
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: grafana-prometheus-sa-token
+        annotations:
+          kubernetes.io/service-account.name: grafana-prometheus-sa
+      type: kubernetes.io/service-account-token
+
+- name: Get token from secret
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    namespace: openshift-monitoring
+    name: grafana-prometheus-sa-token
+  register: grafana_sa_secret
+
+- name: Set bearer token fact
+  ansible.builtin.set_fact:
+    prometheus_bearer_token: "{{ grafana_sa_secret.resources[0].data.token | b64decode }}"
+
+- name: Wait until Prometheus API is responsive
+  ansible.builtin.uri:
+    url: "https://{{ prometheus_source_hostname }}/api/v1/status/config"
+    method: GET
+    headers:
+      Authorization: "Bearer {{ prometheus_bearer_token }}"
+    validate_certs: false
+    return_content: false
+    status_code: 200
+  register: prometheus_ready
+  retries: 30
+  delay: 5
+  until: prometheus_ready.status == 200
+  when:
+    - prometheus_source_hostname is defined
+    - prometheus_bearer_token is defined
+
+- name: Update prometheus datasource
+  community.grafana.grafana_datasource:
+    name: "{{ grafana_datasource }}"
+    url: "https://{{ grafana_hostname }}"
+    url_username: "{{ grafana_admin_user }}"
+    url_password: "{{ grafana_admin_password }}"
+    ds_type: prometheus
+    ds_url: "https://{{ prometheus_source_hostname }}"
+    access: proxy
+    validate_certs: "false"
+    tls_skip_verify: "true"
+    additional_json_data:
+      httpHeaderName1: "Authorization"
+    additional_secure_json_data:
+      httpHeaderValue1: "Bearer {{ prometheus_bearer_token }}"
+    enforce_secure_data: true
