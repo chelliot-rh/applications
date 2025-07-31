@@ -46,7 +46,7 @@ The collection simplifies Keycloak bootstrapping and supports GitOps-friendly in
   hosts: localhost
   gather_facts: false
   collections:
-    - fbi.application_infra
+    - ado.application_infra
 
   vars_files:
     - vault.yaml
@@ -61,8 +61,8 @@ The collection simplifies Keycloak bootstrapping and supports GitOps-friendly in
     client_protocol: "openid-connect"
 
   roles:
-    - role: fbi.application_infra.rhbk_create_realm
-    - role: fbi.application_infra.rhbk_create_client
+    - role: ado.application_infra.rhbk_create_realm
+    - role: ado.application_infra.rhbk_create_client
 ```
 
 **Structure**
